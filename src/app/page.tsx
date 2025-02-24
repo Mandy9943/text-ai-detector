@@ -384,9 +384,9 @@ export default function Home() {
             <textarea
               id="text"
               name="text"
-              rows={6}
+              rows={12}
               disabled={isPending}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full p-3  border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Paste your text here..."
             />
           </div>
