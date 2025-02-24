@@ -1,7 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
-import { analyzeText } from "./actions/analyze";
+import { useState, useTransition } from "react";
 
 interface AiContentDetectionResponse {
   status: number;
@@ -339,18 +338,84 @@ function PromptEditor({
 }
 
 export default function Home() {
-  const [result, formAction] = useActionState(analyzeText, null);
+  const [result, setResult] = useState<AnalyzeResult | HumanizeResult | null>(
+    null
+  );
   const [isPending, startTransition] = useTransition();
   const [showPrompts, setShowPrompts] = useState(false);
   const [prompts, setPrompts] = useState<Prompts>(defaultPrompts);
+  const [currentAction, setCurrentAction] = useState("analyze");
 
-  const handleSubmit = (formData: FormData) => {
-    startTransition(() => {
-      formData.append("anthropicSystem", prompts.anthropicSystem);
-      formData.append("anthropicUser", prompts.anthropicUser);
-      formData.append("geminiSystem", prompts.geminiSystem);
-      formData.append("geminiUser", prompts.geminiUser);
-      formAction(formData);
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const formData = new FormData(e.currentTarget);
+    const text = formData.get("text") as string;
+
+    console.log(`Button clicked: ${currentAction}`);
+
+    if (!text) {
+      setResult({ error: "Please enter some text to analyze" });
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        console.log(
+          `Submitting ${currentAction} request with text length: ${text.length}`
+        );
+
+        if (currentAction === "analyze") {
+          console.log("Calling /api/analyze endpoint");
+          const response = await fetch("/api/analyze", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("API error:", errorData);
+            throw new Error(errorData.error || "Failed to analyze text");
+          }
+
+          const data = await response.json();
+          console.log("Analyze API response:", data);
+          setResult(data);
+        } else {
+          const promptsData = {
+            anthropicSystem: prompts.anthropicSystem,
+            anthropicUser: prompts.anthropicUser,
+            geminiSystem: prompts.geminiSystem,
+            geminiUser: prompts.geminiUser,
+          };
+
+          const response = await fetch("/api/humanize", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              text,
+              type: currentAction,
+              prompts: promptsData,
+            }),
+          });
+
+          const data = await response.json();
+          setResult(data);
+        }
+      } catch (error) {
+        console.error("Error submitting form:", error);
+        setResult({
+          error:
+            error instanceof Error
+              ? error.message
+              : "An error occurred while processing your request",
+        });
+      }
     });
   };
 
@@ -376,7 +441,8 @@ export default function Home() {
           show={showPrompts}
         />
 
-        <form action={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input type="hidden" name="action" value={currentAction} />
           <div>
             <label htmlFor="text" className="block mb-2 text-sm font-medium">
               Enter your text (minimum 300 characters)
@@ -386,15 +452,14 @@ export default function Home() {
               name="text"
               rows={12}
               disabled={isPending}
-              className="w-full p-3  border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Paste your text here..."
             />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
               type="submit"
-              name="action"
-              value="analyze"
+              onClick={() => setCurrentAction("analyze")}
               disabled={isPending}
               className="bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
@@ -403,8 +468,7 @@ export default function Home() {
             </button>
             <button
               type="submit"
-              name="action"
-              value="anthropic"
+              onClick={() => setCurrentAction("anthropic")}
               disabled={isPending}
               className="bg-purple-500 text-white py-2 px-4 rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
@@ -413,8 +477,7 @@ export default function Home() {
             </button>
             <button
               type="submit"
-              name="action"
-              value="gemini"
+              onClick={() => setCurrentAction("gemini")}
               disabled={isPending}
               className="bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
@@ -423,8 +486,7 @@ export default function Home() {
             </button>
             <button
               type="submit"
-              name="action"
-              value="both"
+              onClick={() => setCurrentAction("both")}
               disabled={isPending}
               className="bg-indigo-500 text-white py-2 px-4 rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
