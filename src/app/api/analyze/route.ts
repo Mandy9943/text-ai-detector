@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { NextRequest, NextResponse } from "next/server";
-
+export const runtime = "edge";
 interface AiContentDetectionResponse {
   status: number;
   length: number;
