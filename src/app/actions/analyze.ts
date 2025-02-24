@@ -83,24 +83,32 @@ const googlePrompt = (
 ): string => `Rewrite this using English (US). No detectable patterns. Every sentence structure + grammar random. 1st grade simple language. KEEP THE MAIN IDEAS, TOPICS AND SUBJECT OF THE ORIGINAL TEXT. KEEP THE SAME TENSE AS THE ORIGINAL TEXT. KEEP THE SAME PERSON AS THE ORIGINAL TEXT. KEEP THE SAME VOICE AS THE ORIGINAL TEXT.
 
 Text: ${text}`;
-// ... Add your existing humanization functions ...
-const anthropicHumanize = async (text: string): Promise<string> => {
+
+async function anthropicHumanize(
+  text: string,
+  systemPrompt?: string,
+  userPrompt?: string
+): Promise<string> {
   const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
+
+  const finalSystemPrompt = systemPrompt || anthropicSystemPrompt;
+  const finalUserPrompt =
+    (userPrompt || anthropicPrompt(text)) + `\n\nText: ${text}`;
 
   const msg = await anthropic.messages.create({
     model: "claude-3-5-sonnet-20241022",
     max_tokens: 8192,
     temperature: 1,
-    system: anthropicSystemPrompt,
+    system: finalSystemPrompt,
     messages: [
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: anthropicPrompt(text),
+            text: finalUserPrompt,
           },
         ],
       },
@@ -110,44 +118,60 @@ const anthropicHumanize = async (text: string): Promise<string> => {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-expect-error
   return msg.content[0].text as string;
-};
+}
 
-const googleHumanize = async (text: string): Promise<string> => {
+async function googleHumanize(
+  text: string,
+  systemPrompt?: string,
+  userPrompt?: string
+): Promise<string> {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
   const model = genAI.getGenerativeModel({
     model: "gemini-2.0-flash",
-    systemInstruction: googleSystemInstruction,
+    systemInstruction: systemPrompt || googleSystemInstruction,
   });
 
-  const result = await model.generateContent(googlePrompt(text));
+  const finalPrompt = (userPrompt || googlePrompt(text)) + `\n\nText: ${text}`;
+  const result = await model.generateContent(finalPrompt);
   return result.response.text();
-};
-
-export const humanizeText = async (text: string): Promise<string> => {
-  try {
-    const geminiResult = await googleHumanize(text);
-    const currentResult = await anthropicHumanize(geminiResult);
-
-    return currentResult;
-  } catch (error) {
-    console.error("Error in humanizeText:", error);
-    throw new Error("Failed to humanize text");
-  }
-};
+}
 
 async function handleHumanization(
   text: string,
-  type: "anthropic" | "gemini" | "both"
+  type: "anthropic" | "gemini" | "both",
+  prompts?: {
+    anthropicSystem?: string;
+    anthropicUser?: string;
+    geminiSystem?: string;
+    geminiUser?: string;
+  }
 ): Promise<HumanizeResult> {
   try {
     let humanizedText = text;
 
     if (type === "both") {
-      humanizedText = await humanizeText(text);
+      const geminiResult = await googleHumanize(
+        text,
+        prompts?.geminiSystem,
+        prompts?.geminiUser
+      );
+      humanizedText = await anthropicHumanize(
+        geminiResult,
+        prompts?.anthropicSystem,
+        prompts?.anthropicUser
+      );
     } else if (type === "anthropic") {
-      humanizedText = await anthropicHumanize(text);
+      humanizedText = await anthropicHumanize(
+        text,
+        prompts?.anthropicSystem,
+        prompts?.anthropicUser
+      );
     } else {
-      humanizedText = await googleHumanize(text);
+      humanizedText = await googleHumanize(
+        text,
+        prompts?.geminiSystem,
+        prompts?.geminiUser
+      );
     }
 
     const originalResult = await aiContentDetection(text);
@@ -177,9 +201,17 @@ export async function analyzeText(prevState: any, formData: FormData) {
   if (action === "analyze") {
     return await aiContentDetection(text);
   } else {
+    const prompts = {
+      anthropicSystem: formData.get("anthropicSystem") as string,
+      anthropicUser: formData.get("anthropicUser") as string,
+      geminiSystem: formData.get("geminiSystem") as string,
+      geminiUser: formData.get("geminiUser") as string,
+    };
+
     return await handleHumanization(
       text,
-      action as "anthropic" | "gemini" | "both"
+      action as "anthropic" | "gemini" | "both",
+      prompts
     );
   }
 }
