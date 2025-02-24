@@ -30,6 +30,15 @@ interface HumanizeResult {
   humanized?: AiContentDetectionResponse;
   humanizedText: string;
   error?: string;
+  prompts?: {
+    anthropicSystem?: string;
+    anthropicUser?: string;
+    geminiSystem?: string;
+    geminiUser?: string;
+    finalAnthropicPrompt?: string;
+    finalGeminiPrompt?: string;
+  };
+  type?: "anthropic" | "gemini" | "both";
 }
 
 interface Prompts {
@@ -52,6 +61,72 @@ function LoadingSpinner() {
   );
 }
 
+function PromptsDisplay({
+  prompts,
+  type,
+}: {
+  prompts: NonNullable<HumanizeResult["prompts"]>;
+  type: NonNullable<HumanizeResult["type"]>;
+}) {
+  return (
+    <div className="mt-6 space-y-4">
+      <h3 className="text-lg font-semibold">Prompts Used</h3>
+      {(type === "anthropic" || type === "both") && (
+        <div className="space-y-3">
+          <div>
+            <h4 className="font-medium text-sm mb-1">Claude System Prompt</h4>
+            <pre className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg text-sm">
+              {prompts.anthropicSystem}
+            </pre>
+          </div>
+          <div>
+            <h4 className="font-medium text-sm mb-1">
+              Claude User Prompt Template
+            </h4>
+            <pre className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg text-sm">
+              {prompts.anthropicUser}
+            </pre>
+          </div>
+          {prompts.finalAnthropicPrompt && (
+            <div>
+              <h4 className="font-medium text-sm mb-1">Claude Final Prompt</h4>
+              <pre className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg text-sm border-l-2 border-purple-500">
+                {prompts.finalAnthropicPrompt}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+      {(type === "gemini" || type === "both") && (
+        <div className="space-y-3">
+          <div>
+            <h4 className="font-medium text-sm mb-1">Gemini System Prompt</h4>
+            <pre className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg text-sm">
+              {prompts.geminiSystem}
+            </pre>
+          </div>
+          <div>
+            <h4 className="font-medium text-sm mb-1">
+              Gemini User Prompt Template
+            </h4>
+            <pre className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg text-sm">
+              {prompts.geminiUser}
+            </pre>
+          </div>
+          {prompts.finalGeminiPrompt && (
+            <div>
+              <h4 className="font-medium text-sm mb-1">Gemini Final Prompt</h4>
+              <pre className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg text-sm border-l-2 border-green-500">
+                {prompts.finalGeminiPrompt}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResultDisplay({
   result,
   loading,
@@ -59,6 +134,8 @@ function ResultDisplay({
   result: AnalyzeResult | HumanizeResult | null;
   loading: boolean;
 }) {
+  const [showPrompts, setShowPrompts] = useState(false);
+
   if (loading) {
     return (
       <div className="mt-8 p-8 border rounded-lg dark:border-gray-700 flex items-center justify-center">
@@ -84,12 +161,25 @@ function ResultDisplay({
     return (
       <div className="mt-8 space-y-6">
         <div className="p-4 border rounded-lg dark:border-gray-700">
-          <h2 className="text-xl font-semibold mb-4">Humanized Text</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Humanized Text</h2>
+            {result.prompts && result.type && (
+              <button
+                onClick={() => setShowPrompts(!showPrompts)}
+                className="text-sm text-blue-500 hover:text-blue-600"
+              >
+                {showPrompts ? "Hide Prompts" : "Show Prompts"}
+              </button>
+            )}
+          </div>
           <textarea
             readOnly
             className="w-full p-3 border rounded-lg dark:bg-gray-800 dark:border-gray-700 min-h-[200px]"
             value={result.humanizedText}
           />
+          {showPrompts && result.prompts && result.type && (
+            <PromptsDisplay prompts={result.prompts} type={result.type} />
+          )}
         </div>
         {result.original && result.humanized && (
           <div className="grid grid-cols-2 gap-4">

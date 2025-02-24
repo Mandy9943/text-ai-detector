@@ -4,6 +4,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import axios, { AxiosError } from "axios";
 
+interface Prompts {
+  anthropicSystem: string;
+  anthropicUser: string;
+  geminiSystem: string;
+  geminiUser: string;
+  finalAnthropicPrompt?: string;
+  finalGeminiPrompt?: string;
+}
+
 interface AiContentDetectionResponse {
   status: number;
   length: number;
@@ -36,6 +45,8 @@ interface HumanizeResult {
   humanized?: AiContentDetectionResponse;
   humanizedText: string;
   error?: string;
+  prompts?: Prompts;
+  type?: "anthropic" | "gemini" | "both";
 }
 
 async function aiContentDetection(text: string): Promise<AnalyzeResult> {
@@ -148,30 +159,44 @@ async function handleHumanization(
 ): Promise<HumanizeResult> {
   try {
     let humanizedText = text;
+    const finalPrompts = { ...prompts } as Prompts;
 
     if (type === "both") {
+      const finalGeminiPrompt =
+        (prompts?.geminiUser || googlePrompt(text)) + `\n\nText: ${text}`;
       const geminiResult = await googleHumanize(
         text,
         prompts?.geminiSystem,
         prompts?.geminiUser
       );
+      const finalAnthropicPrompt =
+        (prompts?.anthropicUser || anthropicPrompt(geminiResult)) +
+        `\n\nText: ${geminiResult}`;
       humanizedText = await anthropicHumanize(
         geminiResult,
         prompts?.anthropicSystem,
         prompts?.anthropicUser
       );
+      finalPrompts.finalGeminiPrompt = finalGeminiPrompt;
+      finalPrompts.finalAnthropicPrompt = finalAnthropicPrompt;
     } else if (type === "anthropic") {
+      const finalAnthropicPrompt =
+        (prompts?.anthropicUser || anthropicPrompt(text)) + `\n\nText: ${text}`;
       humanizedText = await anthropicHumanize(
         text,
         prompts?.anthropicSystem,
         prompts?.anthropicUser
       );
+      finalPrompts.finalAnthropicPrompt = finalAnthropicPrompt;
     } else {
+      const finalGeminiPrompt =
+        (prompts?.geminiUser || googlePrompt(text)) + `\n\nText: ${text}`;
       humanizedText = await googleHumanize(
         text,
         prompts?.geminiSystem,
         prompts?.geminiUser
       );
+      finalPrompts.finalGeminiPrompt = finalGeminiPrompt;
     }
 
     const originalResult = await aiContentDetection(text);
@@ -181,6 +206,8 @@ async function handleHumanization(
       original: originalResult.data,
       humanized: humanizedResult.data,
       humanizedText,
+      prompts: finalPrompts,
+      type,
     };
   } catch (error) {
     console.error("Error in handleHumanization:", error);
