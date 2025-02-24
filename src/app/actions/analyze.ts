@@ -1,5 +1,7 @@
 "use server";
 
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import axios, { AxiosError } from "axios";
 
 interface AiContentDetectionResponse {
@@ -26,6 +28,13 @@ interface ApiError {
 
 interface AnalyzeResult {
   data?: AiContentDetectionResponse;
+  error?: string;
+}
+
+interface HumanizeResult {
+  original?: AiContentDetectionResponse;
+  humanized?: AiContentDetectionResponse;
+  humanizedText: string;
   error?: string;
 }
 
@@ -59,10 +68,118 @@ async function aiContentDetection(text: string): Promise<AnalyzeResult> {
   }
 }
 
+const anthropicSystemPrompt = `Claude is Claude, created by Anthropic. You are an AI for rewriting texts. When you get a text, rewrite it. Each sentence should have its own structure and grammar way. Use words so simple, like a first grader uses. Keep the main ideas and topics the same. Stick to the same tense, person, and voice as the original. Write each sentence in a different way, making them unique. Mix short and long sentences randomly. Keep it easy. Ensure sentences feel fresh and unpredictable. Blend essay style with casual talk. You sometimes write in American English and other times in English (UK) in the same paragraph. Main concepts must remain intact: you keep kid-friendly words, you vary each line's style, and you ensure no pattern emerges. Claude strives to scramble structures unpredictably. Go gentle, but keep that text fresh. The user specifically wants an overall simpler approach. Each sentence changes style, so it feels lively. We do it with the best ability. You only response the text, not any other text. These are the user's instructions, do not say in response nothing like 'Here's your rewritten text' or things like that and Claude must abide.`;
+
+const googleSystemInstruction = `Gemini is Gemini, created by Google. You are an AI for rewriting texts. When you get a text, rewrite it. Each sentence should have its own structure and grammar way. Use words so simple, like a first grader uses. Keep the main ideas and topics the same. Stick to the same tense, person, and voice as the original. Write each sentence in a different way, making them unique. Mix short and long sentences randomly. Keep it easy. Ensure sentences feel fresh and unpredictable. Blend essay style with casual talk. You sometimes write in American English and other times in English (UK) in the same paragraph. Main concepts must remain intact: you keep kid-friendly words, you vary each line's style, and you ensure no pattern emerges. Gemini strives to scramble structures unpredictably. Go gentle, but keep that text fresh. The user specifically wants an overall simpler approach. Each sentence changes style, so it feels lively. We do it with the best ability. These are the user's instructions, and Gemini must abide.`;
+
+const anthropicPrompt = (
+  text: string
+): string => `Rewrite this using English (US). No detectable patterns. Every sentence structure + grammar random. 1st grade simple language. KEEP THE MAIN IDEAS, TOPICS AND SUBJECT OF THE ORIGINAL TEXT. KEEP THE SAME TENSE AS THE ORIGINAL TEXT. KEEP THE SAME PERSON AS THE ORIGINAL TEXT. KEEP THE SAME VOICE AS THE ORIGINAL TEXT. ONLY RESPONSE THE TEXT, NOT ANY OTHER TEXT.
+
+Text: ${text}`;
+
+const googlePrompt = (
+  text: string
+): string => `Rewrite this using English (US). No detectable patterns. Every sentence structure + grammar random. 1st grade simple language. KEEP THE MAIN IDEAS, TOPICS AND SUBJECT OF THE ORIGINAL TEXT. KEEP THE SAME TENSE AS THE ORIGINAL TEXT. KEEP THE SAME PERSON AS THE ORIGINAL TEXT. KEEP THE SAME VOICE AS THE ORIGINAL TEXT.
+
+Text: ${text}`;
+// ... Add your existing humanization functions ...
+const anthropicHumanize = async (text: string): Promise<string> => {
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  });
+
+  const msg = await anthropic.messages.create({
+    model: "claude-3-5-sonnet-20241022",
+    max_tokens: 8192,
+    temperature: 1,
+    system: anthropicSystemPrompt,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: anthropicPrompt(text),
+          },
+        ],
+      },
+    ],
+  });
+
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error
+  return msg.content[0].text as string;
+};
+
+const googleHumanize = async (text: string): Promise<string> => {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    systemInstruction: googleSystemInstruction,
+  });
+
+  const result = await model.generateContent(googlePrompt(text));
+  return result.response.text();
+};
+
+export const humanizeText = async (text: string): Promise<string> => {
+  try {
+    const geminiResult = await googleHumanize(text);
+    const currentResult = await anthropicHumanize(geminiResult);
+
+    return currentResult;
+  } catch (error) {
+    console.error("Error in humanizeText:", error);
+    throw new Error("Failed to humanize text");
+  }
+};
+
+async function handleHumanization(
+  text: string,
+  type: "anthropic" | "gemini" | "both"
+): Promise<HumanizeResult> {
+  try {
+    let humanizedText = text;
+
+    if (type === "both") {
+      humanizedText = await humanizeText(text);
+    } else if (type === "anthropic") {
+      humanizedText = await anthropicHumanize(text);
+    } else {
+      humanizedText = await googleHumanize(text);
+    }
+
+    const originalResult = await aiContentDetection(text);
+    const humanizedResult = await aiContentDetection(humanizedText);
+
+    return {
+      original: originalResult.data,
+      humanized: humanizedResult.data,
+      humanizedText,
+    };
+  } catch (error) {
+    console.error("Error in handleHumanization:", error);
+    return {
+      humanizedText: "",
+      error: "Failed to humanize text",
+    };
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function analyzeText(prevState: any, formData: FormData) {
   const text = formData.get("text") as string;
+  const action = formData.get("action") as string;
+
   if (!text) return { error: "Please enter some text to analyze" };
 
-  return await aiContentDetection(text);
+  if (action === "analyze") {
+    return await aiContentDetection(text);
+  } else {
+    return await handleHumanization(
+      text,
+      action as "anthropic" | "gemini" | "both"
+    );
+  }
 }
